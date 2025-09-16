@@ -80,8 +80,7 @@
         let localStream;
         let peerConnections = {};
 
-        // Замените 'http://your-server-ip:5000' на фактический URL вашего бэкенда
-        const backendUrl = 'http://your-server-ip:5000';
+        const backendUrl = 'https://old-loops-wait.loca.lt/';
         const socket = io(backendUrl, {
             auth: {
                 token: localStorage.getItem('token')
