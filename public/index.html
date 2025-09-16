@@ -69,167 +69,176 @@
     </div>
     <div id="videos"></div>
     <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
-    <script>
-        const messageElement = document.getElementById('message');
-        const localVideo = document.createElement('video');
-        localVideo.autoplay = true;
-        localVideo.playsInline = true;
-        localVideo.muted = true;
-        document.getElementById('videos').appendChild(localVideo);
+<script>
+    const messageElement = document.getElementById('message');
+    const localVideo = document.createElement('video');
+    localVideo.autoplay = true;
+    localVideo.playsInline = true;
+    localVideo.muted = true;
+    document.getElementById('videos').appendChild(localVideo);
 
-        let localStream;
-        let peerConnections = {};
+    let localStream;
+    let peerConnections = {};
 
-        const backendUrl = 'https://old-loops-wait.loca.lt/';
-        const socket = io(backendUrl, {
-            auth: {
-                token: localStorage.getItem('token')
-            }
+    // Замените 'https://old-loops-wait.loca.lt' на фактический URL, предоставленный localtunnel
+    const backendUrl = 'https://old-loops-wait.loca.lt';
+    const socket = io(backendUrl, {
+        auth: {
+            token: localStorage.getItem('token')
+        },
+        extraHeaders: {
+            'bypass-tunnel-reminder': 'true'
+        }
+    });
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+            localStream = stream;
+            localVideo.srcObject = stream;
+        })
+        .catch(err => {
+            console.error('Error accessing media devices.', err);
+            showMessage('Error accessing media devices.');
         });
 
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-            .then(stream => {
-                localStream = stream;
-                localVideo.srcObject = stream;
-            })
-            .catch(err => {
-                console.error('Error accessing media devices.', err);
-                showMessage('Error accessing media devices.');
-            });
+    const registerButton = document.getElementById('registerButton');
+    const loginButton = document.getElementById('loginButton');
+    const joinRoomButton = document.getElementById('joinRoomButton');
+    const leaveRoomButton = document.getElementById('leaveRoomButton');
 
-        const registerButton = document.getElementById('registerButton');
-        const loginButton = document.getElementById('loginButton');
-        const joinRoomButton = document.getElementById('joinRoomButton');
-        const leaveRoomButton = document.getElementById('leaveRoomButton');
+    registerButton.onclick = async () => {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const response = await fetch(`${backendUrl}/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'bypass-tunnel-reminder': 'true'
+            },
+            body: JSON.stringify({ username, password })
+        });
+        const result = await response.json();
+        showMessage(result.message);
+    };
 
-        registerButton.onclick = async () => {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const response = await fetch(`${backendUrl}/register`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
+    loginButton.onclick = async () => {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const response = await fetch(`${backendUrl}/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'bypass-tunnel-reminder': 'true'
+            },
+            body: JSON.stringify({ username, password })
+        });
+        const result = await response.json();
+        if (result.token) {
+            localStorage.setItem('token', result.token);
+            showMessage('Logged in successfully');
+            socket.disconnect();
+            socket.connect({
+                auth: {
+                    token: result.token
                 },
-                body: JSON.stringify({ username, password })
+                extraHeaders: {
+                    'bypass-tunnel-reminder': 'true'
+                }
             });
-            const result = await response.json();
+        } else {
             showMessage(result.message);
-        };
+        }
+    };
 
-        loginButton.onclick = async () => {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const response = await fetch(`${backendUrl}/login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username, password })
-            });
-            const result = await response.json();
-            if (result.token) {
-                localStorage.setItem('token', result.token);
-                showMessage('Logged in successfully');
-                socket.disconnect();
-                socket.connect({
-                    auth: {
-                        token: result.token
-                    }
-                });
-            } else {
-                showMessage(result.message);
+    joinRoomButton.onclick = () => {
+        const roomName = document.getElementById('roomName').value;
+        socket.emit('joinRoom', roomName);
+    };
+
+    leaveRoomButton.onclick = () => {
+        const roomName = document.getElementById('roomName').value;
+        socket.emit('leaveRoom', roomName);
+    };
+
+    socket.on('connect_error', (error) => {
+        showMessage('Connection error: ' + error.message);
+    });
+
+    socket.on('userJoined', (username, participants) => {
+        console.log(`${username} joined the room`);
+        participants.forEach(participant => {
+            if (participant !== socket.id && !peerConnections[participant]) {
+                createPeerConnection(participant);
+            }
+        });
+    });
+
+    socket.on('userLeft', (username, participants) => {
+        console.log(`${username} left the room`);
+        participants.forEach(participant => {
+            if (peerConnections[participant]) {
+                peerConnections[participant].close();
+                delete peerConnections[participant];
+            }
+        });
+    });
+
+    socket.on('offer', async (data) => {
+        const peerConnection = createPeerConnection(data.from);
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('answer', { to: data.from, answer });
+    });
+
+    socket.on('answer', async (data) => {
+        const peerConnection = peerConnections[data.from];
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+    });
+
+    socket.on('iceCandidate', async (data) => {
+        const peerConnection = peerConnections[data.from];
+        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+    });
+
+    function createPeerConnection(userId) {
+        const peerConnection = new RTCPeerConnection({
+            iceServers: [
+                {
+                    urls: ['stun:stun.l.google.com:19302']
+                }
+            ]
+        });
+
+        peerConnections[userId] = peerConnection;
+
+        peerConnection.onicecandidate = event => {
+            if (event.candidate) {
+                socket.emit('iceCandidate', { to: userId, candidate: event.candidate });
             }
         };
 
-        joinRoomButton.onclick = () => {
-            const roomName = document.getElementById('roomName').value;
-            socket.emit('joinRoom', roomName);
+        peerConnection.ontrack = event => {
+            const remoteVideo = document.createElement('video');
+            remoteVideo.autoplay = true;
+            remoteVideo.playsInline = true;
+            remoteVideo.srcObject = event.streams[0];
+            document.getElementById('videos').appendChild(remoteVideo);
         };
 
-        leaveRoomButton.onclick = () => {
-            const roomName = document.getElementById('roomName').value;
-            socket.emit('leaveRoom', roomName);
-        };
-
-        socket.on('connect_error', (error) => {
-            showMessage('Connection error: ' + error.message);
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
         });
 
-        socket.on('userJoined', (username, participants) => {
-            console.log(`${username} joined the room`);
-            participants.forEach(participant => {
-                if (participant !== socket.id && !peerConnections[participant]) {
-                    createPeerConnection(participant);
-                }
-            });
-        });
+        return peerConnection;
+    }
 
-        socket.on('userLeft', (username, participants) => {
-            console.log(`${username} left the room`);
-            participants.forEach(participant => {
-                if (peerConnections[participant]) {
-                    peerConnections[participant].close();
-                    delete peerConnections[participant];
-                }
-            });
-        });
-
-        socket.on('offer', async (data) => {
-            const peerConnection = createPeerConnection(data.from);
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            socket.emit('answer', { to: data.from, answer });
-        });
-
-        socket.on('answer', async (data) => {
-            const peerConnection = peerConnections[data.from];
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-        });
-
-        socket.on('iceCandidate', async (data) => {
-            const peerConnection = peerConnections[data.from];
-            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-        });
-
-        function createPeerConnection(userId) {
-            const peerConnection = new RTCPeerConnection({
-                iceServers: [
-                    {
-                        urls: ['stun:stun.l.google.com:19302']
-                    }
-                ]
-            });
-
-            peerConnections[userId] = peerConnection;
-
-            peerConnection.onicecandidate = event => {
-                if (event.candidate) {
-                    socket.emit('iceCandidate', { to: userId, candidate: event.candidate });
-                }
-            };
-
-            peerConnection.ontrack = event => {
-                const remoteVideo = document.createElement('video');
-                remoteVideo.autoplay = true;
-                remoteVideo.playsInline = true;
-                remoteVideo.srcObject = event.streams[0];
-                document.getElementById('videos').appendChild(remoteVideo);
-            };
-
-            localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, localStream);
-            });
-
-            return peerConnection;
-        }
-
-        function showMessage(msg) {
-            messageElement.textContent = msg;
-            setTimeout(() => {
-                messageElement.textContent = '';
-            }, 5000);
-        }
-    </script>
+    function showMessage(msg) {
+        messageElement.textContent = msg;
+        setTimeout(() => {
+            messageElement.textContent = '';
+        }, 5000);
+    }
+</script>
 </body>
 </html>
