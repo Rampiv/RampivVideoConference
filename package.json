@@ -1,0 +1,14 @@
+{
+  "name": "video-conference-frontend",
+  "version": "1.0.0",
+  "description": "Frontend for Video Conference",
+  "main": "index.html",
+  "scripts": {
+    "deploy": "gh-pages -d dist"
+  },
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "gh-pages": "^6.3.0"
+  }
+}
