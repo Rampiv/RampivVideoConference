@@ -10,7 +10,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*",
+        origin: "https://fancy-gnome-180787.netlify.app/",
         methods: ["GET", "POST"],
         allowedHeaders: ["Content-Type", "Authorization"]
     }
