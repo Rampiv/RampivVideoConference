@@ -16,16 +16,6 @@
         h1 {
             margin-top: 20px;
         }
-        #auth-container {
-            margin-bottom: 20px;
-        }
-        #auth-container input {
-            margin-right: 10px;
-            padding: 5px;
-        }
-        #auth-container button {
-            padding: 5px 10px;
-        }
         #room-container {
             margin-bottom: 20px;
         }
@@ -55,13 +45,6 @@
 </head>
 <body>
     <h1>Video Conference</h1>
-    <div id="auth-container">
-        <input type="text" id="username" placeholder="Username">
-        <input type="password" id="password" placeholder="Password">
-        <button id="registerButton">Register</button>
-        <button id="loginButton">Login</button>
-        <div id="message"></div>
-    </div>
     <div id="room-container">
         <input type="text" id="roomName" placeholder="Room Name">
         <button id="joinRoomButton">Join Room</button>
@@ -80,12 +63,8 @@
         let localStream;
         let peerConnections = {};
 
-        // Замените 'https://old-loops-wait.loca.lt' на фактический URL, предоставленный localtunnel
-        const backendUrl = 'https://old-loops-wait.loca.lt';
+        const backendUrl = 'https://old-loops-wait.loca.lt'; // Замените на фактический URL вашего сервера
         const socket = io(backendUrl, {
-            auth: {
-                token: localStorage.getItem('token')
-            },
             extraHeaders: {
                 'bypass-tunnel-reminder': 'true'
             },
@@ -108,63 +87,8 @@
                 showMessage('Error accessing media devices.');
             });
 
-        const registerButton = document.getElementById('registerButton');
-        const loginButton = document.getElementById('loginButton');
         const joinRoomButton = document.getElementById('joinRoomButton');
         const leaveRoomButton = document.getElementById('leaveRoomButton');
-
-        registerButton.onclick = async () => {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const response = await fetch(`${backendUrl}/register`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'bypass-tunnel-reminder': 'true',
-                    'User-Agent': 'CustomUserAgent'
-                },
-                body: JSON.stringify({ username, password })
-            });
-            const result = await response.json();
-            showMessage(result.message);
-        };
-
-        loginButton.onclick = async () => {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const response = await fetch(`${backendUrl}/login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'bypass-tunnel-reminder': 'true',
-                    'User-Agent': 'CustomUserAgent'
-                },
-                body: JSON.stringify({ username, password })
-            });
-            const result = await response.json();
-            if (result.token) {
-                localStorage.setItem('token', result.token);
-                showMessage('Logged in successfully');
-                socket.disconnect();
-                socket.connect({
-                    auth: {
-                        token: result.token
-                    },
-                    extraHeaders: {
-                        'bypass-tunnel-reminder': 'true'
-                    },
-                    transportOptions: {
-                        polling: {
-                            extraHeaders: {
-                                'User-Agent': 'CustomUserAgent'
-                            }
-                        }
-                    }
-                });
-            } else {
-                showMessage(result.message);
-            }
-        };
 
         joinRoomButton.onclick = () => {
             const roomName = document.getElementById('roomName').value;
