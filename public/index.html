@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Conference</title>
+    <style>
+        #videos {
+            display: flex;
+            flex-wrap: wrap;
+        }
+        video {
+            width: 30%;
+            margin: 5px;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+    <h1>Video Conference</h1>
+    <div>
+        <input type="text" id="username" placeholder="Username">
+        <input type="password" id="password" placeholder="Password">
+        <button id="registerButton">Register</button>
+        <button id="loginButton">Login</button>
+    </div>
+    <div>
+        <input type="text" id="roomName" placeholder="Room Name">
+        <button id="joinRoomButton">Join Room</button>
+        <button id="leaveRoomButton">Leave Room</button>
+    </div>
+    <div id="videos"></div>
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <script>
+        const socket = io({
+            auth: {
+                token: localStorage.getItem('token')
+            }
+        });
+
+        const localVideo = document.createElement('video');
+        localVideo.autoplay = true;
+        localVideo.playsInline = true;
+        localVideo.muted = true;
+        document.getElementById('videos').appendChild(localVideo);
+
+        let localStream;
+        let peerConnections = {};
+
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+                localStream = stream;
+                localVideo.srcObject = stream;
+            })
+            .catch(err => console.error('Error accessing media devices.', err));
+
+        const registerButton = document.getElementById('registerButton');
+        const loginButton = document.getElementById('loginButton');
+        const joinRoomButton = document.getElementById('joinRoomButton');
+        const leaveRoomButton = document.getElementById('leaveRoomButton');
+
+        registerButton.onclick = async () => {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const response = await fetch('/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username, password })
+            });
+            const result = await response.json();
+            alert(result.message);
+        };
+
+        loginButton.onclick = async () => {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username, password })
+            });
+            const result = await response.json();
+            if (result.token) {
+                localStorage.setItem('token', result.token);
+                alert('Logged in successfully');
+                socket.disconnect();
+                socket.connect({
+                    auth: {
+                        token: result.token
+                    }
+                });
+            } else {
+                alert(result.message);
+            }
+        };
+
+        joinRoomButton.onclick = () => {
+            const roomName = document.getElementById('roomName').value;
+            socket.emit('joinRoom', roomName);
+        };
+
+        leaveRoomButton.onclick = () => {
+            const roomName = document.getElementById('roomName').value;
+            socket.emit('leaveRoom', roomName);
+        };
+
+        socket.on('userJoined', (username, participants) => {
+            console.log(`${username} joined the room`);
+            participants.forEach(participant => {
+                if (participant !== socket.id && !peerConnections[participant]) {
+                    createPeerConnection(participant);
+                }
+            });
+        });
+
+        socket.on('userLeft', (username, participants) => {
+            console.log(`${username} left the room`);
+            participants.forEach(participant => {
+                if (peerConnections[participant]) {
+                    peerConnections[participant].close();
+                    delete peerConnections[participant];
+                }
+            });
+        });
+
+        socket.on('offer', async (data) => {
+            const peerConnection = createPeerConnection(data.from);
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('answer', { to: data.from, answer });
+        });
+
+        socket.on('answer', async (data) => {
+            const peerConnection = peerConnections[data.from];
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        });
+
+        socket.on('iceCandidate', async (data) => {
+            const peerConnection = peerConnections[data.from];
+            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        });
+
+        function createPeerConnection(userId) {
+            const peerConnection = new RTCPeerConnection({
+                iceServers: [
+                    {
+                        urls: ['stun:stun.l.google.com:19302']
+                    }
+                ]
+            });
+
+            peerConnections[userId] = peerConnection;
+
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    socket.emit('iceCandidate', { to: userId, candidate: event.candidate });
+                }
+            };
+
+            peerConnection.ontrack = event => {
+                const remoteVideo = document.createElement('video');
+                remoteVideo.autoplay = true;
+                remoteVideo.playsInline = true;
+                remoteVideo.srcObject = event.streams[0];
+                document.getElementById('videos').appendChild(remoteVideo);
+            };
+
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            return peerConnection;
+        }
+    </script>
+</body>
+</html>
