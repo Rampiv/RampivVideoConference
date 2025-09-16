@@ -173,6 +173,17 @@
                 document.getElementById('videos').appendChild(remoteVideo);
             };
 
+            peerConnection.onnegotiationneeded = async () => {
+                try {
+                    console.log(`Negotiation needed with ${userId}`);
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLocalDescription(offer);
+                    socket.emit('offer', { to: userId, offer });
+                } catch (err) {
+                    console.error(`Error during negotiation with ${userId}:`, err);
+                }
+            };
+
             localStream.getTracks().forEach(track => {
                 peerConnection.addTrack(track, localStream);
             });
