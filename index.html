@@ -124,6 +124,7 @@
         });
 
         socket.on('offer', async (data) => {
+            console.log(`Offer received from ${data.from}:`, data.offer);
             const peerConnection = createPeerConnection(data.from);
             await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
             const answer = await peerConnection.createAnswer();
@@ -132,11 +133,13 @@
         });
 
         socket.on('answer', async (data) => {
+            console.log(`Answer received from ${data.from}:`, data.answer);
             const peerConnection = peerConnections[data.from];
             await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
         });
 
         socket.on('iceCandidate', async (data) => {
+            console.log(`ICE candidate received from ${data.from}:`, data.candidate);
             const peerConnection = peerConnections[data.from];
             await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
         });
@@ -154,11 +157,15 @@
 
             peerConnection.onicecandidate = event => {
                 if (event.candidate) {
+                    console.log(`ICE candidate for ${userId}:`, event.candidate);
                     socket.emit('iceCandidate', { to: userId, candidate: event.candidate });
+                } else {
+                    console.log(`End of candidates for ${userId}`);
                 }
             };
 
             peerConnection.ontrack = event => {
+                console.log(`Track received from ${userId}:`, event.streams[0]);
                 const remoteVideo = document.createElement('video');
                 remoteVideo.autoplay = true;
                 remoteVideo.playsInline = true;
